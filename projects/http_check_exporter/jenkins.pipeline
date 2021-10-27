@@ -1,0 +1,56 @@
+@Library('cicd') _
+pipeline{
+agent none
+stages {
+    stage('get code'){
+      agent {
+        node('master')
+      }
+      steps{
+	checkout_github("file:///root/github/http_check_exporter")
+        script {
+        env.codeid = sh (script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+        env.now=  sh(returnStdout: true, script: 'date +%Y%m%d%H%M').trim()
+    }
+      }
+   }
+//
+// golang build
+//
+    stage('build code'){
+       agent{ 
+         docker { 
+           image 'golang:1.14-alpine' 
+           args '-v /go/pkg:/go/pkg'
+       }
+     }
+       steps{
+        sh '''
+           cd code
+           go build http_check_exporter.go
+        '''
+      }
+    }
+//
+// build docker image
+//
+    stage('build & push docker image'){
+      agent {
+        node('master')
+      }
+      steps{
+	   sh '''
+		echo ${codeid}
+		echo ${now}
+		cp projects/http_check_exporter/Dockerfile .
+           '''
+           script{
+                 docker.withRegistry("https://harbor.vphotos.cn","harboradmin"){
+	          def myimg = docker.build("vphoto/http_check_exporter:${now}-${codeid}")
+		myimg.push("${now}-${codeid}")
+		}
+           }
+     }
+   }
+  }
+}
